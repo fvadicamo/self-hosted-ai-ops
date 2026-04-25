@@ -14,6 +14,8 @@ This runbook installs tmux and applies an opinionated configuration that changes
 | Pane navigation | prefix + arrow | `Alt+arrow` | No prefix needed, faster switching |
 | Scrollback | 2000 lines | 10000 lines | Default is insufficient for long command output |
 | Window numbering | starts at 0 | starts at 1 | Matches keyboard layout (1 is leftmost) |
+| Aggressive resize | off | on | Resize panes to the currently active client instead of the smallest attached one (matters when reattaching from terminals of different size and when nesting tmux) |
+| Status left | `[#S] ` | `[#H:#S] ` | Show hostname alongside session name; disambiguates which host you are on when nesting or attaching from elsewhere |
 | Default terminal | `screen` | `tmux-256color` | Modern terminfo with extended capabilities (requires `ncurses-term`) |
 | Terminal features | (auto-detected) | `RGB hyperlinks usstyle sync clipboard extkeys osc7` + `focus` | Advertise outer-terminal support so tmux forwards true color, OSC 8 hyperlinks, underline styles, synchronized output, OSC 52 clipboard, modified keys via CSI u, OSC 7 cwd reporting, and focus events |
 | OSC/DCS passthrough | off | on | Allow inner programs to emit escape sequences directly to the host terminal (required by interactive CLIs and some TUIs that paint UI via OSC/DCS) |
@@ -85,9 +87,12 @@ bind -n M-Down select-pane -D
 # Scrollback
 set -g history-limit 10000
 
-# Minimal status bar
+# Resize panes to the currently active client (helps multi-client and nested tmux)
+set -g aggressive-resize on
+
+# Minimal status bar (hostname helps when nesting or attaching from elsewhere)
 set -g status-style 'bg=colour235 fg=colour136'
-set -g status-left '[#S] '
+set -g status-left '[#H:#S] '
 set -g status-right '%H:%M %d-%b'
 set -g status-right-length 30
 
@@ -189,3 +194,15 @@ extended-keys on
 | Scroll mode (copy mode) | `Ctrl+A` then `[` |
 | Exit scroll mode | `q` |
 | Reload config | `Ctrl+A` then `r` |
+
+---
+
+## Nested tmux
+
+You may end up with a tmux client running tmux on a remote host (a tmux pane attached over SSH to another tmux session). Two practical points apply:
+
+**Sending the prefix to the inner tmux.** Both the outer and the inner tmux capture `Ctrl+A`. The `bind C-a send-prefix` line in the configuration above lets you forward it: press `Ctrl+A` twice, the first is consumed by the outer, the second is sent through to the inner. Alternatively you can use a different prefix for the inner instance (for example `set -g prefix C-b` only on the inner) to avoid having to double-tap.
+
+**Capabilities must be on at every layer.** The terminal features advertised here (true color, extended keys via CSI u, OSC 52 clipboard, OSC/DCS passthrough, focus events) only work end-to-end if every tmux in the chain has them on, and if the outermost terminal emulator on the client supports them. A nested tmux that runs a different (older or default) configuration will silently strip features added by the outer layers.
+
+The `aggressive-resize on` option also helps in this scenario: panes resize to the currently active client rather than to the smallest one attached, which is what you want when the inner session is being viewed through a single pane of the outer one.
