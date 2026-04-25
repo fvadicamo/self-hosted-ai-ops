@@ -2,7 +2,7 @@
 
 Terminal multiplexer for persistent sessions on remote servers. Sessions survive SSH disconnections and allow splitting the screen into multiple panes. Essential for headless remote work.
 
-This runbook installs tmux and applies an opinionated configuration that changes several defaults for comfort and usability.
+This runbook installs tmux and applies an opinionated configuration that changes several defaults for comfort and usability, and enables capabilities (true color, system clipboard via OSC 52, extended keys, OSC/DCS passthrough, focus events) that modern interactive CLIs and TUIs rely on.
 
 ## Configuration choices
 
@@ -14,6 +14,13 @@ This runbook installs tmux and applies an opinionated configuration that changes
 | Pane navigation | prefix + arrow | `Alt+arrow` | No prefix needed, faster switching |
 | Scrollback | 2000 lines | 10000 lines | Default is insufficient for long command output |
 | Window numbering | starts at 0 | starts at 1 | Matches keyboard layout (1 is leftmost) |
+| Default terminal | `screen` | `tmux-256color` | Modern terminfo with extended capabilities (requires `ncurses-term`) |
+| Terminal features | (auto-detected) | `RGB hyperlinks usstyle sync clipboard extkeys osc7` + `focus` | Advertise outer-terminal support so tmux forwards true color, OSC 8 hyperlinks, underline styles, synchronized output, OSC 52 clipboard, modified keys via CSI u, OSC 7 cwd reporting, and focus events |
+| OSC/DCS passthrough | off | on | Allow inner programs to emit escape sequences directly to the host terminal (required by interactive CLIs and some TUIs that paint UI via OSC/DCS) |
+| Focus events | off | on | Forward terminal focus-in/focus-out to inner programs (autosave, notifications, etc.) |
+| Extended keys | off | on (server option) | Report modified keys (Shift+Enter, Ctrl+Shift+letter, ...) via CSI u so inner programs can distinguish them |
+
+> Note on the outer terminal: capabilities advertised here only work end-to-end if the terminal emulator running on the client (iTerm2, Alacritty, WezTerm, kitty, GNOME Terminal, etc.) actually supports them and is configured to do so (true color enabled, clipboard access from terminal applications allowed, modifier reporting enabled). Check your terminal's documentation if a feature does not seem to work.
 
 ## Placeholders
 
@@ -28,16 +35,19 @@ None. This runbook uses no placeholders.
 **Action:**
 
 ```bash
-sudo apt install -y tmux
+sudo apt install -y tmux ncurses-term
 ```
+
+`ncurses-term` ships the `tmux-256color` terminfo entry used below.
 
 **Verify:**
 
 ```bash
 tmux -V
+infocmp tmux-256color | head -1
 ```
 
-Expected output: `tmux 3.4` or newer.
+Expected: `tmux 3.4` or newer, and the terminfo entry exists (no error).
 
 ---
 
@@ -81,9 +91,21 @@ set -g status-left '[#S] '
 set -g status-right '%H:%M %d-%b'
 set -g status-right-length 30
 
-# Terminal colors
-set -g default-terminal 'screen-256color'
-set -ga terminal-overrides ',xterm-256color:Tc'
+# Terminal capabilities (true color, hyperlinks, system clipboard via OSC 52,
+# synchronized output, extended keys via CSI u, OSC 7 cwd reporting)
+set -g default-terminal 'tmux-256color'
+set -as terminal-features 'xterm*:RGB:hyperlinks:usstyle:sync:clipboard:extkeys:osc7'
+set -as terminal-features '*:focus'
+
+# Passthrough OSC/DCS sequences from inner programs to the outer terminal
+# (required by interactive CLIs and TUIs that paint UI via escape sequences)
+set -g allow-passthrough on
+
+# Forward terminal focus-in/focus-out events to inner programs
+set -g focus-events on
+
+# Report modified keys (Shift+Enter, Ctrl+Shift+letter, ...) via CSI u
+set -s extended-keys on
 
 # Reload config
 bind r source-file ~/.tmux.conf \; display 'config reloaded'
@@ -109,15 +131,19 @@ Expected output: `set -g prefix C-a`
 ```bash
 tmux new-session -d -s test
 tmux show-option -g prefix -t test
+tmux show-option -g allow-passthrough -t test
+tmux show-option -s extended-keys -t test
 tmux kill-session -t test
 ```
 
 **Verify:**
 
-The `show-option` command should output:
+The output should show:
 
 ```
 prefix C-a
+allow-passthrough on
+extended-keys on
 ```
 
 ---
