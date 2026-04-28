@@ -11,7 +11,7 @@ This runbook installs tmux and applies an opinionated configuration that changes
 | Prefix key | `Ctrl+B` | `Ctrl+A` | More comfortable reach on most keyboards |
 | Mouse support | off | on | Scroll output, click to select panes |
 | Split bindings | `"` and `%` | `\|` and `-` | Mnemonic: vertical bar, horizontal dash |
-| Pane navigation | prefix + arrow | `Alt+arrow` | No prefix needed, faster switching |
+| Pane navigation | prefix + arrow | (kept default) | Considered binding `Alt+arrow` for prefix-less switching, but kept the default to leave `Option/Alt+Left/Right` available for shell word-jump (zsh/bash bind those to `backward-word`/`forward-word`) |
 | Scrollback | 2000 lines | 10000 lines | Default is insufficient for long command output |
 | Window numbering | starts at 0 | starts at 1 | Matches keyboard layout (1 is leftmost) |
 | Aggressive resize | off | on | Resize panes to the currently active client instead of the smallest attached one (matters when reattaching from terminals of different size and when nesting tmux) |
@@ -78,11 +78,10 @@ set -g renumber-windows on
 bind | split-window -h -c '#{pane_current_path}'
 bind - split-window -v -c '#{pane_current_path}'
 
-# Navigate panes with Alt+arrows
-bind -n M-Left select-pane -L
-bind -n M-Right select-pane -R
-bind -n M-Up select-pane -U
-bind -n M-Down select-pane -D
+# Pane navigation: keep the default `prefix + arrow`. Do NOT bind `M-arrow`:
+# it would shadow `Option/Alt+Left/Right` which most shells bind to word-jump
+# (`backward-word`/`forward-word`). For prefix-less pane nav consider vim-style
+# `bind -n M-h/j/k/l` if you really want it without prefix.
 
 # Scrollback
 set -g history-limit 10000
@@ -183,7 +182,7 @@ extended-keys on
 |--------|------|
 | Vertical split | `Ctrl+A` then `\|` |
 | Horizontal split | `Ctrl+A` then `-` |
-| Navigate panes | `Alt+arrow` (no prefix needed) |
+| Navigate panes | `Ctrl+A` then arrow |
 | Close pane | `exit` or `Ctrl+D` |
 | Toggle zoom (fullscreen pane) | `Ctrl+A` then `z` |
 
