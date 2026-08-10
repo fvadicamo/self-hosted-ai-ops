@@ -76,16 +76,63 @@ Configuration files and credentials for the container. Small, text-based config 
 
 Docker in bridge mode (`-p HOST:CONTAINER`) writes iptables rules directly, bypassing UFW. Any port mapped with `-p` becomes accessible from the network regardless of UFW rules.
 
-**Solution for services that must respect UFW:** use `--network=host`. The container shares the host network stack, and UFW rules apply normally.
+The mechanism, because knowing it tells you which fixes can work. Docker DNATs published
+ports in `nat/PREROUTING`, so the traffic takes the FORWARD path and never reaches INPUT,
+where UFW's port rules live. In FORWARD, the jump to Docker's own chains comes before any
+`ufw-*` chain:
+
+```
+-P FORWARD DROP
+-A FORWARD -j DOCKER-USER        <- the only hook evaluated before Docker
+-A FORWARD -j DOCKER-FORWARD     <- Docker accepts here
+-A FORWARD -j ufw-before-forward <- UFW arrives after, and sees nothing
+```
+
+**A UFW rule on a bridge-published port is not "not enough": it is inert.** Worse, it reads
+as a control that exists. If you find such rules, remove them rather than leaving them as
+documentation of an intent nothing enforces.
+
+Three fixes, in order of how surgical they are:
+
+**1. Put the address in the publish spec.** The DNAT rule then carries a destination match,
+so the port is genuinely scoped. Best when you control the compose file:
 
 ```bash
-# WRONG for services that must respect UFW:
-docker run -p 8000:8000 ...    # bypasses UFW, port accessible to everyone
+docker run -p 127.0.0.1:8000:8000 ...     # loopback only
+docker run -p <VPN_IP>:8000:8000 ...      # one interface only
+```
 
-# CORRECT:
+Caveat: binding a VPN or overlay address creates a start-order dependency on that interface
+being up. For a service that starts at boot, order the unit after the VPN daemon.
+
+**2. One rule in `DOCKER-USER`**, which Docker guarantees not to overwrite. Best when several
+services share the same policy, or when you cannot recreate the containers:
+
+```bash
+# deny forwarding from an untrusted interface to any container
+iptables -I DOCKER-USER -i <IFACE> -m conntrack --ctstate NEW -j DROP
+```
+
+`--ctstate NEW` is mandatory, not cosmetic: return traffic of the containers' own outbound
+connections arrives on the same interface, so without it you break every `docker pull`.
+Apply it to `ip6tables` too: if Docker IPv6 is enabled later, IPv6 DNAT appears and an
+IPv4-only rule stops covering it, silently. The rule is not persistent by itself, so drive it
+from a systemd unit ordered after (and `PartOf=`) the Docker service.
+
+**3. `--network=host`.** The container shares the host network stack and UFW applies normally.
+Simple, but it removes network isolation and is not available for multi-container stacks that
+rely on an internal bridge network:
+
+```bash
 docker run --network=host ...  # UFW applies, port controlled by ufw rules
 # the service binds directly on the host; use --listen/--bind in the process inside
 ```
+
+**How to verify, without fooling yourself.** Do not read the firewall rules: source traffic
+from an address the firewall does not allow and see whether it answers. A throwaway container
+on a different bridge works. Watch out for the blind spot: if the source sits on the *same*
+bridge as the target, the DNAT rule does not match (`! -i br-X`) and the port looks blocked
+when it is not.
 
 ### When to use `--network=host`
 
